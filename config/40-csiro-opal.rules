@@ -1,0 +1,13 @@
+# disable modem-manager when using SAM-BA bootloader
+ATTRS{idVendor}=="03eb", ATTRS{idProduct}=="6124", MODE="660", GROUP="plugdev", ENV{ID_MM_DEVICE_IGNORE}="1"
+# disable modem-manger when using the CDC serial port device
+ATTRS{idVendor}=="03eb", ATTRS{idProduct}=="6119", MODE="660", GROUP="plugdev", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# Opal: SAM-BA bootloader
+SUBSYSTEM=="tty", ATTRS{idVendor}=="03eb", ATTRS{idProduct}=="6124", MODE="660", GROUP="plugdev"
+# Opal: USB serial device (CDC mode)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="03eb", ATTRS{idProduct}=="6119", MODE="660", GROUP="plugdev"
+
+# FTDI programmer on Opal debug board
+ATTR{idVendor}=="0403", ATTR{idProduct}=="6010", MODE="660", GROUP="plugdev"
+

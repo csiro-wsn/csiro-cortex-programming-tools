@@ -1,0 +1,395 @@
+diff --git Makefile Makefile
+index 821f579..e2ad958 100644
+--- Makefile
++++ Makefile
+@@ -3,7 +3,7 @@
+ # 
+ # Version
+ #
+-VERSION=1.3a
++VERSION=1.3a-csiro-build
+ WXVERSION=2.8
+ 
+ #
+@@ -134,7 +134,7 @@ DEPENDS+=$(BOSSASH_SRCS:%.cpp=$(OBJDIR)/%.d)
+ # Tools
+ #
+ #Q=@
+-CXX=g++
++CXX=$(CROSS_COMPILE)g++
+ ARM=arm-none-eabi-
+ ARMAS=$(ARM)as
+ ARMOBJCOPY=$(ARM)objcopy
+@@ -143,10 +143,10 @@ ARMOBJCOPY=$(ARM)objcopy
+ # CXX Flags
+ #
+ COMMON_CXXFLAGS+=-Wall -Werror -MT $@ -MD -MP -MF $(@:%.o=%.d) -DVERSION=\"$(VERSION)\" -g -O2
+-WX_CXXFLAGS:=$(shell wx-config --cxxflags --version=$(WXVERSION)) -DWX_PRECOMP -Wno-ctor-dtor-privacy -O2 -fno-strict-aliasing
++#WX_CXXFLAGS:=$(shell wx-config --cxxflags --version=$(WXVERSION)) -DWX_PRECOMP -Wno-ctor-dtor-privacy -O2 -fno-strict-aliasing
+ BOSSA_CXXFLAGS=$(COMMON_CXXFLAGS) $(WX_CXXFLAGS) 
+ BOSSAC_CXXFLAGS=$(COMMON_CXXFLAGS)
+-BOSSASH_CXXFLAGS=$(COMMON_CXXFLAGS) -Isrc/arm-dis
++BOSSASH_CXXFLAGS=$(COMMON_CXXFLAGS) -Isrc/arm-dis -I/usr/include/
+ 
+ #
+ # LD Flags
+@@ -160,7 +160,7 @@ BOSSASH_LDFLAGS=$(COMMON_LDFLAGS)
+ # Libs
+ #
+ COMMON_LIBS+=
+-WX_LIBS:=$(shell wx-config --libs --version=$(WXVERSION)) $(WX_LIBS)
++#WX_LIBS:=$(shell wx-config --libs --version=$(WXVERSION)) $(WX_LIBS)
+ BOSSA_LIBS=$(COMMON_LIBS) $(WX_LIBS)
+ BOSSAC_LIBS=$(COMMON_LIBS)
+ BOSSASH_LIBS=-lreadline $(COMMON_LIBS)
+@@ -168,7 +168,7 @@ BOSSASH_LIBS=-lreadline $(COMMON_LIBS)
+ #
+ # Main targets
+ #
+-all: $(BINDIR)/bossa$(EXE) $(BINDIR)/bossac$(EXE) $(BINDIR)/bossash$(EXE)
++all: $(BINDIR)/bossac$(EXE)
+ 
+ #
+ # Common rules
+diff --git src/Command.cpp src/Command.cpp
+index 26260bb..11da776 100644
+--- src/Command.cpp
++++ src/Command.cpp
+@@ -1192,7 +1192,7 @@ CommandVerify::invoke(char* argv[], int argc)
+         !flashable())
+         return;
+ 
+-    _flasher.verify(argv[1]);
++    _flasher.verify(argv[1], _samba);
+ }
+ 
+ CommandWrite::CommandWrite() :
+@@ -1209,5 +1209,19 @@ CommandWrite::invoke(char* argv[], int argc)
+         !flashable())
+         return;
+ 
+-    _flasher.write(argv[1]);
++    _flasher.write(argv[1], _samba);
++}
++
++CommandReset::CommandReset() :
++    Command("reset",
++            "Reset microcontroller",
++            "reset")
++{}
++
++void
++CommandReset::invoke(char* argv[], int argc)
++{
++    if (!argNum(argc, 1))
++        return;
++    _flasher.reset(_samba);
+ }
+diff --git src/Command.h src/Command.h
+index 6ff3b5a..e7343f5 100644
+--- src/Command.h
++++ src/Command.h
+@@ -260,4 +260,11 @@ public:
+     virtual void invoke(char* argv[], int argc);
+ };
+ 
++class CommandReset : public Command
++{
++public:
++    CommandReset();
++    virtual void invoke(char* argv[], int argc);
++};
++
+ #endif // _COMMAND_H
+diff --git src/EefcFlash.cpp src/EefcFlash.cpp
+index 890dd76..3327d31 100644
+--- src/EefcFlash.cpp
++++ src/EefcFlash.cpp
+@@ -198,6 +198,7 @@ EefcFlash::setBod(bool enable)
+ 
+     waitFSR();
+     writeFCR0(enable ? EEFC_FCMD_SGPB : EEFC_FCMD_CGPB, 1);
++    waitFSR();
+ }
+ 
+ bool
+@@ -220,6 +221,7 @@ EefcFlash::setBor(bool enable)
+ 
+     waitFSR();
+     writeFCR0(enable ? EEFC_FCMD_SGPB : EEFC_FCMD_CGPB, 2);
++    waitFSR();
+ }
+ 
+ bool
+@@ -236,6 +238,7 @@ EefcFlash::setBootFlash(bool enable)
+ {
+     waitFSR();
+     writeFCR0(enable ? EEFC_FCMD_SGPB : EEFC_FCMD_CGPB, (_canBrownout ? 3 : 1));
++    waitFSR();
+ }
+ 
+ void
+diff --git src/Flasher.cpp src/Flasher.cpp
+index dfbf1f9..0bf3828 100644
+--- src/Flasher.cpp
++++ src/Flasher.cpp
+@@ -57,7 +57,7 @@ Flasher::erase()
+ }
+ 
+ void
+-Flasher::write(const char* filename)
++Flasher::write(const char* filename, Samba& samba)
+ {
+     FILE* infile;
+     uint32_t pageSize = _flash->pageSize();
+@@ -84,6 +84,12 @@ Flasher::write(const char* filename)
+ 
+         printf("Write %ld bytes to flash\n", fsize);
+ 
++		// init Leds
++		samba.writeWord(0x400E1000, 0x01C0); // PIOC_PER 6,7,8
++		samba.writeWord(0x400E1060, 0x01C0); // PIOC_PPUDR 6,7,8
++		samba.writeWord(0x400E1034, 0x01C0); // PIOC_PCODR 6,7,8
++		samba.writeWord(0x400E1010, 0x01C0); // PIOC_OER 6,7,8
++
+         while ((fbytes = fread(buffer, 1, pageSize, infile)) > 0)
+         {
+             if (pageNum % 10 == 0)
+@@ -92,6 +98,10 @@ Flasher::write(const char* filename)
+             _flash->loadBuffer(buffer);
+             _flash->writePage(pageNum);
+ 
++	    // toggle Leds
++	    samba.writeWord(0x400E1030, 0x01C0); // PIOC_CODR
++	    samba.writeWord(0x400E1034, (pageNum & 0x38)<<3); // PIOC_SODR
++
+             pageNum++;
+             if (pageNum == numPages || fbytes != pageSize)
+                 break;
+@@ -100,6 +110,9 @@ Flasher::write(const char* filename)
+             throw FileIoError(errno);
+         progressBar(pageNum, numPages);
+         printf("\n");
++
++		// clear Leds
++        samba.writeWord(0x400E1030, 0x01C0); // PIOC_SODR
+     }
+     catch(...)
+     {
+@@ -110,7 +123,7 @@ Flasher::write(const char* filename)
+ }
+ 
+ bool
+-Flasher::verify(const char* filename)
++Flasher::verify(const char* filename, Samba& samba)
+ {
+     FILE* infile;
+     uint32_t pageSize = _flash->pageSize();
+@@ -141,6 +154,12 @@ Flasher::verify(const char* filename)
+ 
+         printf("Verify %ld bytes of flash\n", fsize);
+ 
++		// init Leds
++		samba.writeWord(0x400E1000, 0x01C0); // PIOC_PER 6,7,8
++		samba.writeWord(0x400E1060, 0x01C0); // PIOC_PPUDR 6,7,8
++		samba.writeWord(0x400E1034, 0x01C0); // PIOC_PCODR 6,7,8
++		samba.writeWord(0x400E1010, 0x01C0); // PIOC_OER 6,7,8
++
+         while ((fbytes = fread(bufferA, 1, pageSize, infile)) > 0)
+         {
+             if (pageNum % 10 == 0)
+@@ -148,6 +167,11 @@ Flasher::verify(const char* filename)
+ 
+             _flash->readPage(pageNum, bufferB);
+ 
++	    	// toggle Leds
++	    	samba.writeWord(0x400E1030, 0x01C0); // PIOC_CODR
++	    	samba.writeWord(0x400E1034, (pageNum & 0x38)<<3); // PIOC_SODR
++
++
+             byteErrors = 0;
+             for (uint32_t i = 0; i < fbytes; i++)
+             {
+@@ -168,6 +192,10 @@ Flasher::verify(const char* filename)
+             throw FileIoError(errno);
+         progressBar(pageNum, numPages);
+         printf("\n");
++
++		// clear Leds
++        samba.writeWord(0x400E1030, 0x01C0); // PIOC_SODR
++
+     }
+     catch(...)
+     {
+@@ -273,9 +301,14 @@ void
+ Flasher::info(Samba& samba)
+ {
+     bool first;
++    uint32_t uId[4];
+ 
+     printf("Device       : %s\n", _flash->name().c_str());
+     printf("Chip ID      : %08x\n", samba.chipId());
++    if (samba.uniqueId(&uId[0]))
++    {
++        printf("Unique ID    : %08x%08x%08x%08x\n", uId[0], uId[1], uId[2], uId[3]);
++    }
+     printf("Version      : %s\n", samba.version().c_str());
+     printf("Address      : %d\n", _flash->address());
+     printf("Pages        : %d\n", _flash->numPages());
+@@ -302,3 +335,11 @@ Flasher::info(Samba& samba)
+     if (_flash->canBor())
+         printf("BOR          : %s\n", _flash->getBor() ? "true" : "false");
+ }
++
++
++void
++Flasher::reset(Samba& samba)
++{
++  printf("reset node\n");
++  samba.writeWord(0x400E1200, 0xA5000005); // write PROCRST and PERRST to RSTC_CR register
++}
+diff --git src/Flasher.h src/Flasher.h
+index 07b1089..9a05886 100644
+--- src/Flasher.h
++++ src/Flasher.h
+@@ -40,11 +40,12 @@ public:
+     virtual ~Flasher() {}
+ 
+     void erase();
+-    void write(const char* filename);
+-    bool verify(const char* filename);
++    void write(const char* filename, Samba& samba);
++    bool verify(const char* filename, Samba& samba);
+     void read(const char* filename, long fsize);
+     void lock(std::string& regionArg, bool enable);
+     void info(Samba& samba);
++    void reset(Samba& samba);
+ 
+ private:
+     void progressBar(int num, int div);
+diff --git src/Samba.cpp src/Samba.cpp
+index bc3abf7..2424fb4 100644
+--- src/Samba.cpp
++++ src/Samba.cpp
+@@ -545,3 +545,41 @@ Samba::chipId()
+     }
+     return cid;
+ }
++
++bool
++Samba::uniqueId(uint32_t* uid)
++{
++    uint32_t uidPtr = 0x80000;
++    int pos;
++
++    // Read the ARM reset vector
++    uint32_t vector = readWord(0x0);
++
++    // If the vector is a ARM7TDMI branch, then assume Atmel SAM7 registers
++    if ((vector & 0xff000000) == 0xea000000)
++        // not implemented
++        return 0;
++    // Else use the Atmel SAM3 registers
++    else {
++
++        // Write "Start Read Unique Identifier" command to EEFC Flash Command Register
++        writeWord(0x400E0804, ((0x5A << 24) | 0xE));
++
++        // Wait for FRDY bit to fall in EEFC Flash Status Register
++        while (readWord(0x400E0808) & 0x01);
++
++        // Read Unique Identifier at 0x80000-0x8000F
++        for (pos = 0; pos < 4; pos++ ) {
++            uid[pos] = readWord(uidPtr);
++            uidPtr += 4; 
++        }
++
++        // Write "Stop Read Unique Identifier" command to EEFC Flash Command Register
++        writeWord(0x400E0804, ((0x5A << 24) | 0xF));
++
++        // Wait for FRDY bit to rise in EEFC Flash Status Register
++        while (!(readWord(0x400E0808) & 0x01));
++
++    }
++    return 1;
++}
+diff --git src/Samba.h src/Samba.h
+index c5d4872..fb8bb2d 100644
+--- src/Samba.h
++++ src/Samba.h
+@@ -56,6 +56,7 @@ public:
+     std::string version();
+ 
+     uint32_t chipId();
++    bool uniqueId(uint32_t* uid);
+ 
+     void setDebug(bool debug) { _debug = debug; }
+ 
+diff --git src/Shell.cpp src/Shell.cpp
+index e631055..2bebc3e 100644
+--- src/Shell.cpp
++++ src/Shell.cpp
+@@ -55,6 +55,7 @@ Shell::Shell() :
+     add(new CommandSecurity);
+     add(new CommandVerify);
+     add(new CommandWrite);
++    add(new CommandReset);
+ 
+     _commandList.sort();
+ }
+diff --git src/bossac.cpp src/bossac.cpp
+index 4c4e2b2..74a7e45 100644
+--- src/bossac.cpp
++++ src/bossac.cpp
+@@ -50,6 +50,7 @@ public:
+     bool info;
+     bool debug;
+     bool help;
++    bool autostart;
+ 
+     int readArg;
+     string portArg;
+@@ -74,6 +75,7 @@ BossaConfig::BossaConfig()
+     security = false;
+     info = false;
+     help = false;
++    autostart = false;
+ 
+     readArg = 0;
+     bootArg = 1;
+@@ -120,6 +122,11 @@ static Option opts[] =
+       "option is ignored on unsupported devices"
+     },
+     {
++      'a', "autostart", &config.autostart,
++      { ArgNone },
++      "reset MCU after flash operation"
++    },
++    {
+       'c', "bod", &config.bod,
+       { ArgOptional, ArgInt, "BOOL", { &config.bodArg } },
+       "no brownout detection if BOOL is 0;\n"
+@@ -293,10 +300,10 @@ main(int argc, char* argv[])
+             flasher.erase();
+ 
+         if (config.write)
+-            flasher.write(argv[args]);
++            flasher.write(argv[args], samba);
+ 
+         if (config.verify)
+-            if  (!flasher.verify(argv[args]))
++            if  (!flasher.verify(argv[args], samba))
+                 return 2;
+ 
+         if (config.read)
+@@ -331,6 +338,10 @@ main(int argc, char* argv[])
+ 
+         if (config.info)
+             flasher.info(samba);
++
++	if (config.autostart) {
++	    flasher.reset(samba);
++	}
+     }
+     catch (exception& e)
+     {
