@@ -70,7 +70,7 @@ int debug_get_device(struct ftdi_context *ftdi, struct ftdi_device_list **devlis
 
             if ((atoi(curdev->dev->bus->dirname) == bus) && (atoi(curdev->dev->filename) == device))
             {
-                devlist = &curdev;
+                *devlist = curdev;
                 return 1;
             }
             curdev = curdev->next;
