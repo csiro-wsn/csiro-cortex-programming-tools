@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     } else {
 
         // get device with matching bus and device identifier
-        if ((ret = debug_get_device(ftdi, &devlist, atoi(argv[1]), atoi(argv[2])))<=0)
+        if ((ret = debug_get_device(ftdi, &devlist, argv[1], argv[2]))<=0)
         {
             fprintf(stderr, "Error: No opal debug board found.\n");
             return EXIT_FAILURE;

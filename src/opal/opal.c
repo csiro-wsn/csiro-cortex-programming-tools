@@ -57,10 +57,10 @@ int debug_get_devices(struct ftdi_context *ftdi, struct ftdi_device_list **devli
 }
 
 
-int debug_get_device(struct ftdi_context *ftdi, struct ftdi_device_list **devlist, int bus, int device)
+int debug_get_device(struct ftdi_context *ftdi, struct ftdi_device_list **devlist, char *busnum, char *devnum)
 {
 
-    // get all devices and look for matching bus and device identifier
+    // get all devices and look for matching bus and dev identifier
     if (ftdi_usb_find_all(ftdi, devlist, OPAL_FTDI_VENDOR_ID, OPAL_FTDI_PRODUCT_ID)>0)
     {
         struct ftdi_device_list *curdev;
@@ -68,7 +68,7 @@ int debug_get_device(struct ftdi_context *ftdi, struct ftdi_device_list **devlis
 
         while (curdev != NULL) {
 
-            if ((atoi(curdev->dev->bus->dirname) == bus) && (atoi(curdev->dev->filename) == device))
+            if (strcmp(curdev->dev->bus->dirname, busnum) == 0 && strcmp(curdev->dev->filename, devnum) == 0)
             {
                 *devlist = curdev;
                 return 1;
