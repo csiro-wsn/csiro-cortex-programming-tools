@@ -22,6 +22,11 @@ export PATH=$PATH:$HOME/csiro-cortex-programming-tools
 ```
 4. In order to setup USB device permissions using udev rules copy "40-csiro-opal.rules" from the "config" folder to "/etc/udev/rules.d/".
 
+## Troubleshooting for OSX:
+1. to compile opal tools for OSX, you might want to use the following flags
+```
+CFLAGS="-L/opt/local/lib/ -I/opt/local/include/"
+```
 
 ## Contact: 
 
