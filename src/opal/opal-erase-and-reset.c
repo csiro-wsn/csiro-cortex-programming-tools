@@ -57,7 +57,7 @@ int main(int argc, char **argv)
 
     if (!(argc==1 || argc==3))
     {
-       fprintf(stderr, "Usage: opal-init [<bus> <device>]\n");
+       fprintf(stderr, "Usage: opal-erase-and-reset [<bus> <device>]\n");
        return EXIT_FAILURE;
     }
 
